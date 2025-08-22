@@ -4,10 +4,10 @@ import asyncio
 import base64
 import logging
 import contextlib
-import time
 from typing import Optional
 
 from dotenv import load_dotenv
+from utils.screen_stream import LastFrame
 from livekit import rtc
 from livekit.agents import (
     Agent,
@@ -30,17 +30,6 @@ load_dotenv()
 
 logger = logging.getLogger("screen-agent")
 logger.setLevel(logging.INFO)
-
-# Keep the most recent screen frame
-class LastFrame:
-    def __init__(self):
-        self.frame = None
-        self.ts = 0.0
-    def update(self, f):
-        # throttle to ~2 fps to avoid spamming the LLM
-        now = time.time()
-        if now - self.ts > 0.5:
-            self.frame, self.ts = f, now
 
 last_screen = LastFrame()
 
