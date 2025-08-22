@@ -1,0 +1,4 @@
+livekit-agents[openai, cartesia, elevenlabs, deepgram, silero, turn-detector, mcp]>=1.0
+python-dotenv>=1.0
+aiohttp>=3.9
+
