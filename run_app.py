@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import contextlib
+import os
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from livekit import rtc
@@ -20,12 +22,18 @@ from livekit.plugins import deepgram, openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from agent.screen_agent import ScreenQAAgent, last_screen
+from tools.calendar_api import Calendar, GoogleCalendar
 
 
 load_dotenv()
 
 logger = logging.getLogger("screen-agent")
 logger.setLevel(logging.INFO)
+
+
+@dataclass
+class Userdata:
+    cal: Calendar
 
 
 async def entrypoint(ctx: JobContext):
@@ -56,7 +64,12 @@ async def entrypoint(ctx: JobContext):
 
     # Nothing to reset for image injection; state-less
 
-    session = AgentSession(
+    # Setup GoogleCalendar
+    cal = GoogleCalendar()
+    await cal.initialize()
+
+    session = AgentSession[Userdata](
+        userdata=Userdata(cal=cal),
         stt=deepgram.STT(),
         llm=openai.LLM(model="gpt-4o"),
         tts=openai.TTS(model="gpt-4o-mini-tts"),
