@@ -4,6 +4,8 @@ import base64
 import datetime
 import hashlib
 import logging
+import asyncio
+import os
 import random
 from dataclasses import dataclass
 from typing import Protocol
@@ -46,165 +48,184 @@ class Calendar(Protocol):
     ) -> list[AvailableSlot]: ...
 
 
-class FakeCalendar(Calendar):
-    def __init__(self, *, timezone: str, slots: list[AvailableSlot] | None = None) -> None:
-        self.tz = ZoneInfo(timezone)
-        self._slots: list[AvailableSlot] = []
-
-        if slots is not None:
-            self._slots.extend(slots)
-            return
-
-        today = datetime.datetime.now(self.tz).date()
-        for day_offset in range(1, 90):  # generate slots for the next 90 days
-            current_day = today + datetime.timedelta(days=day_offset)
-            if current_day.weekday() >= 5:
-                continue
-
-            # build all possible 30-min slots between 09:00 and 17:00
-            day_start = datetime.datetime.combine(current_day, datetime.time(9, 0), tzinfo=self.tz)
-            slots_in_day = [
-                day_start + datetime.timedelta(minutes=30 * i)
-                for i in range(int((17 - 9) * 2))  # (17-9)=8 hours => 16 slots
-            ]
-
-            num_slots = random.randint(3, 6)
-            chosen = random.sample(slots_in_day, num_slots)
-
-            for slot_start in sorted(chosen):
-                self._slots.append(AvailableSlot(start_time=slot_start, duration_min=30))
-
-    async def initialize(self) -> None:
-        pass
-
-    async def schedule_appointment(
-        self, *, start_time: datetime.datetime, attendee_email: str
+class GoogleCalendar(Calendar):
+    def __init__(
+        self,
+        *,
+        access_token: str | None = None,
+        timezone: str,
+        calendar_id: str = "primary",
+        base_url: str | None = None,
     ) -> None:
-        # fake it by just removing it from our slots list
-        self._slots = [slot for slot in self._slots if slot.start_time != start_time]
-
-    async def list_available_slots(
-        self, *, start_time: datetime.datetime, end_time: datetime.datetime
-    ) -> list[AvailableSlot]:
-        return [slot for slot in self._slots if start_time <= slot.start_time < end_time]
-
-
-# --- cal.com impl ---
-
-CAL_COM_EVENT_TYPE = "livekit-front-desk"
-EVENT_DURATION_MIN = 30
-BASE_URL = "https://api.cal.com/v2/"
-
-
-class CalComCalendar(Calendar):
-    def __init__(self, *, api_key: str, timezone: str) -> None:
         self.tz = ZoneInfo(timezone)
-        self._api_key = api_key
+        self._timezone_name = timezone
+        self._access_token = access_token or os.environ.get("GOOGLE_CAL_ACCESS_TOKEN")
+        if not self._access_token:
+            raise ValueError(
+                "Google Calendar access token not provided. Set GOOGLE_CAL_ACCESS_TOKEN or pass access_token."
+            )
+        self._calendar_id = calendar_id
+        self._base_url = base_url or os.environ.get(
+            "GOOGLE_CAL_BASE_URL", "https://www.googleapis.com/calendar/v3/"
+        )
 
         try:
             self._http_session = http_context.http_session()
         except RuntimeError:
             self._http_session = aiohttp.ClientSession()
 
-        self._logger = logging.getLogger("cal.com")
+        self._logger = logging.getLogger("google.calendar")
 
     async def initialize(self) -> None:
-        async with self._http_session.get(
-            headers=self._build_headers(api_version="2024-06-14"), url=f"{BASE_URL}me/"
-        ) as resp:
+        # Verify that the calendar is accessible
+        url = f"{self._base_url}calendars/{self._calendar_id}"
+        async with self._http_session.get(headers=self._build_headers(), url=url) as resp:
             resp.raise_for_status()
-            username = (await resp.json())["data"]["username"]
-            self._logger.info(f"using cal.com username: {username}")
-
-        query = urlencode({"username": username})
-        async with self._http_session.get(
-            headers=self._build_headers(api_version="2024-06-14"),
-            url=f"{BASE_URL}event-types/?{query}",
-        ) as resp:
-            resp.raise_for_status()
-            data = (await resp.json())["data"]
-            lk_event_type = next(
-                (event for event in data if event.get("slug") == CAL_COM_EVENT_TYPE), None
-            )
-
-            if lk_event_type:
-                self._lk_event_id = lk_event_type["id"]
-            else:
-                async with self._http_session.post(
-                    headers=self._build_headers(api_version="2024-06-14"),
-                    url=f"{BASE_URL}event-types",
-                    json={
-                        "lengthInMinutes": EVENT_DURATION_MIN,
-                        "title": "LiveKit Front-Desk",
-                        "slug": CAL_COM_EVENT_TYPE,
-                    },
-                ) as resp:
-                    resp.raise_for_status()
-                    self._logger.info(f"successfully added {CAL_COM_EVENT_TYPE} event type")
-                    data = (await resp.json())["data"]
-                    self._lk_event_id = data["id"]
-
-            self._logger.info(f"event type id: {self._lk_event_id}")
+            data = await resp.json()
+            cal_summary = data.get("summary", self._calendar_id)
+            self._logger.info(f"using google calendar: {cal_summary}")
 
     async def schedule_appointment(
         self, *, start_time: datetime.datetime, attendee_email: str
     ) -> None:
-        start_time = start_time.astimezone(datetime.timezone.utc)
+        # Ensure timezone-aware UTC for checks and ISO payloads
+        start_utc = start_time.astimezone(datetime.timezone.utc)
+        end_utc = start_utc + datetime.timedelta(minutes=EVENT_DURATION_MIN)
+
+        # Double-check availability to avoid overlapping bookings
+        busy_blocks = await self._freebusy(start_utc=start_utc, end_utc=end_utc)
+        if self._is_range_busy(start_utc, end_utc, busy_blocks):
+            raise SlotUnavailableError("Time slot is no longer available")
+
+        # Create the event
+        create_url = f"{self._base_url}calendars/{self._calendar_id}/events?sendUpdates=all"
+
+        # Use local timezone name for Google API (IANA name like "America/Los_Angeles")
+        start_local = start_utc.astimezone(self.tz)
+        end_local = end_utc.astimezone(self.tz)
+
+        body = {
+            "summary": "LiveKit Appointment",
+            "start": {"dateTime": start_local.isoformat(), "timeZone": self._timezone_name},
+            "end": {"dateTime": end_local.isoformat(), "timeZone": self._timezone_name},
+            "attendees": [{"email": attendee_email}],
+        }
 
         async with self._http_session.post(
-            headers=self._build_headers(api_version="2024-08-13"),
-            url=f"{BASE_URL}bookings",
-            json={
-                "start": start_time.isoformat(),
-                "attendee": {
-                    "name": attendee_email,  # TODO: add name prompt
-                    "email": attendee_email,
-                    "timeZone": self.tz.tzname(None),
-                },
-                "eventTypeId": self._lk_event_id,
-            },
+            headers=self._build_headers(), url=create_url, json=body
         ) as resp:
+            # If Google ever returns a conflict/busy, surface as SlotUnavailableError
+            if resp.status in (409,):
+                raise SlotUnavailableError("Time slot is no longer available")
             data = await resp.json()
-            if error := data.get("error"):
-                message = error["message"]
-                if "User either already has booking at this time or is not available" in message:
-                    raise SlotUnavailableError(error["message"])
-
-            resp.raise_for_status()
+            if resp.status >= 400:
+                message = data.get("error", {}).get("message", "Failed to create event")
+                # Conservatively map obvious busy-style errors
+                if any(k in message.lower() for k in ["busy", "conflict", "overlap"]):
+                    raise SlotUnavailableError(message)
+                resp.raise_for_status()
 
     async def list_available_slots(
         self, *, start_time: datetime.datetime, end_time: datetime.datetime
     ) -> list[AvailableSlot]:
-        start_time = start_time.astimezone(datetime.timezone.utc)
-        end_time = end_time.astimezone(datetime.timezone.utc)
-        query = urlencode(
-            {
-                "eventTypeId": self._lk_event_id,
-                "start": start_time.isoformat(),
-                "end": end_time.isoformat(),
-            }
-        )
-        async with self._http_session.get(
-            headers=self._build_headers(api_version="2024-09-04"), url=f"{BASE_URL}slots/?{query}"
-        ) as resp:
+        # Normalize to UTC for API, but compute candidate slots at 30-min granularity
+        start_utc = start_time.astimezone(datetime.timezone.utc)
+        end_utc = end_time.astimezone(datetime.timezone.utc)
+
+        busy_blocks = await self._freebusy(start_utc=start_utc, end_utc=end_utc)
+
+        # Generate 30-min candidate starts from start_utc up to end_utc - duration
+        slots: list[AvailableSlot] = []
+        duration = datetime.timedelta(minutes=EVENT_DURATION_MIN)
+
+        # Align start to the next 30-min boundary
+        aligned_start = self._align_to_interval(start_utc, minutes=EVENT_DURATION_MIN)
+        current = aligned_start
+        while current + duration <= end_utc:
+            if not self._is_range_busy(current, current + duration, busy_blocks):
+                slots.append(AvailableSlot(start_time=current, duration_min=EVENT_DURATION_MIN))
+            current += duration
+
+        return slots
+
+    async def _freebusy(
+        self, *, start_utc: datetime.datetime, end_utc: datetime.datetime
+    ) -> list[tuple[datetime.datetime, datetime.datetime]]:
+        url = f"{self._base_url}freeBusy"
+        body = {
+            "timeMin": start_utc.isoformat(),
+            "timeMax": end_utc.isoformat(),
+            "timeZone": "UTC",
+            "items": [{"id": self._calendar_id}],
+        }
+
+        async with self._http_session.post(headers=self._build_headers(), url=url, json=body) as resp:
             resp.raise_for_status()
-            raw_data = (await resp.json())["data"]
+            data = await resp.json()
+            cal = data.get("calendars", {}).get(self._calendar_id, {})
+            busy_list = []
+            for b in cal.get("busy", []):
+                b_start = datetime.datetime.fromisoformat(b["start"].replace("Z", "+00:00"))
+                b_end = datetime.datetime.fromisoformat(b["end"].replace("Z", "+00:00"))
+                busy_list.append((b_start, b_end))
+            return busy_list
 
-            available_slots = []
-            for _, slots in raw_data.items():
-                for slot in slots:
-                    start_dt = datetime.datetime.fromisoformat(slot["start"].replace("Z", "+00:00"))
-                    available_slots.append(
-                        AvailableSlot(start_time=start_dt, duration_min=EVENT_DURATION_MIN)
-                    )
+    def _is_range_busy(
+        self,
+        start_dt: datetime.datetime,
+        end_dt: datetime.datetime,
+        busy_blocks: list[tuple[datetime.datetime, datetime.datetime]],
+    ) -> bool:
+        return any(start_dt < b_end and end_dt > b_start for b_start, b_end in busy_blocks)
 
-        return available_slots
+    def _align_to_interval(self, dt: datetime.datetime, *, minutes: int) -> datetime.datetime:
+        # Aligns dt forward to the next interval boundary in UTC
+        minute = (dt.minute // minutes) * minutes
+        base = dt.replace(minute=minute, second=0, microsecond=0)
+        if base < dt:
+            base += datetime.timedelta(minutes=minutes)
+        return base
 
-    def _build_headers(self, *, api_version: str | None = None) -> dict[str, str]:
-        h = {"Authorization": f"Bearer {self._api_key}"}
-        if api_version:
-            h["cal-api-version"] = api_version
-        return h
+    def _build_headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/json",
+        }
 
 
+async def _test_google_calendar() -> None:
+    tz_name = os.environ.get("TEST_TZ", "UTC")
+    access_token = os.environ.get("GOOGLE_CAL_ACCESS_TOKEN")
+    calendar_id = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
+    base_url = os.environ.get("GOOGLE_CAL_BASE_URL")
 
+    if not access_token:
+        print("GOOGLE_CAL_ACCESS_TOKEN is not set; cannot run test.")
+        return
+
+    cal = GoogleCalendar(
+        access_token=access_token,
+        timezone=tz_name,
+        calendar_id=calendar_id,
+        base_url=base_url,
+    )
+    await cal.initialize()
+
+    now_local = datetime.datetime.now(ZoneInfo(tz_name))
+    start = now_local
+    end = start + datetime.timedelta(days=7)
+
+    print(f"Listing available {EVENT_DURATION_MIN}-min slots between {start} and {end}...")
+    slots = await cal.list_available_slots(start_time=start, end_time=end)
+    print(f"Found {len(slots)} slots.")
+    for s in slots[:10]:
+        print(f"- {s.start_time.isoformat()} ({s.duration_min}m) id={s.unique_hash}")
+
+    await cal.schedule_appointment(start_time=slots[0].start_time, attendee_email="nguyennbaochau@gmail.com")
+    print("Booking created.")
+
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+    asyncio.run(_test_google_calendar())
