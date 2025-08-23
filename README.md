@@ -92,11 +92,6 @@ CAL_API_KEY=
 
 ---
 
-## License ⚖️
-MIT
-
----
-
 ## Acknowledgements 🙏
 - **LiveKit Agents SDK** for real-time audio/video and room orchestration.
 - **OpenAI** for LLM and TTS models.
