@@ -128,3 +128,6 @@ data/
 .streamlit/
 
 
+
+# Allow checking in env template
+!template.env
