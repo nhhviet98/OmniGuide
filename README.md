@@ -1,4 +1,4 @@
-# OmniGuide — Voice + Screen Agent for Calendar Assistance
+# OmniGuide — Voice + Screen Agent for Calendar Assistance 🎙️🖥️📅
 
 ![Logo](./assets/logo.png)
 
@@ -6,29 +6,29 @@ A LiveKit-based multimodal agent that understands your shared screen, chats by v
 
 ---
 
-## Badges
-- **Build**: passing
-- **License**: MIT
-- **Python**: 3.11+
-- **Coverage**: n/a
+## Badges 🏷️
+- 🧪 **Build**: passing
+- 📄 **License**: MIT
+- 🐍 **Python**: 3.11+
+- 📊 **Coverage**: n/a
 
 ---
 
-## Features
-- **Voice and chat**: Uses OpenAI LLM and optional Deepgram/OpenAI TTS for natural interactions.
-- **Screen-aware guidance**: Automatically attaches the latest screen-share frame to user turns for grounded Q&A.
-- **Calendar tools**: `GoogleCalendar`: reads free/busy and creates events via Google Calendar API.
-- **LiveKit integration**: Works with the LiveKit Playground; subscribes to screen-share tracks and captures frames.
+## Features ✨
+- 🗣️ **Voice and chat**: Uses OpenAI LLM and optional Deepgram/OpenAI TTS for natural interactions.
+- 🖥️ **Screen-aware guidance**: Automatically attaches the latest screen-share frame to user turns for grounded Q&A.
+- 📆 **Calendar tools**: `GoogleCalendar`: reads free/busy and creates events via Google Calendar API.
+- 📡 **LiveKit integration**: Works with the LiveKit Playground; subscribes to screen-share tracks and captures frames.
 
 ---
 
-## Installation
+## Installation 🧰
 
-### Prerequisites
-- Python 3.11+
-- A LiveKit Cloud project or self-hosted LiveKit with Playground access
+### Prerequisites 📋
+- 🐍 Python 3.11+
+- ☁️ A LiveKit Cloud project or self-hosted LiveKit with Playground access
 
-### Setup
+### Setup 🛠️
 ```bash
 cd examples/omniguide
 python -m venv .venv
@@ -39,7 +39,7 @@ cp template.env .env  # then edit with your keys
 
 ---
 
-### Usage: Screen Q&A + Google Calendar (run `run_app.py`)
+### Usage: Screen Q&A + Google Calendar (run `run_app.py`) ▶️
 - Injects the latest screen frame into the LLM turn and offers:
   - `list_available_slots(range)` to list free time
   - `schedule_appointment(date_time)` to book a meeting
@@ -48,7 +48,7 @@ cd examples/omniguide
 python run_app.py
 ```
 
-In the LiveKit Playground:
+🎛️ In the LiveKit Playground:
 1. Create/join a room and connect the worker.
 2. Enable microphone, chat, and screen share.
 3. Share a calendar window or any UI and ask questions by voice or text.
@@ -57,15 +57,15 @@ In the LiveKit Playground:
    - “Book a 60-minute slot next Friday at 14:30.”
    - “List a few options in the next two weeks.”
 
-Playground tips:
+💡 Playground tips:
 - Enable mic, chat, and screen share.
 - The agent will proactively offer to check availability.
 
 ---
 
-## Configuration / Environment Variables
+## Configuration / Environment Variables ⚙️
 
-Use `.env` based on `template.env`:
+🔧 Use `.env` based on `template.env`:
 
 ```
 # LiveKit
@@ -87,12 +87,12 @@ GOOGLE_CAL_ACCESS_TOKEN=<OAuth2 access token>
 CAL_API_KEY=
 ```
 
-Notes:
+📝 Notes:
 - `GOOGLE_CAL_ACCESS_TOKEN` must be a valid OAuth2 token authorized for the target calendar.
 
 ---
 
-## Contributing
+## Contributing 🤝
 - Fork and open a PR with a clear description.
 - Keep code readable and typed; prefer descriptive names and early returns.
 - Include minimal repro steps for bug reports.
@@ -100,12 +100,12 @@ Notes:
 
 ---
 
-## License
+## License ⚖️
 MIT
 
 ---
 
-## Acknowledgements
+## Acknowledgements 🙏
 - **LiveKit Agents SDK** for real-time audio/video and room orchestration.
 - **OpenAI** for LLM and TTS models.
 - **Deepgram** for STT/TTS (optional path).
