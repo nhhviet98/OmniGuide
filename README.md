@@ -6,14 +6,6 @@ A LiveKit-based multimodal agent that understands your shared screen, chats by v
 
 ---
 
-## Badges 🏷️
-- 🧪 **Build**: passing
-- 📄 **License**: MIT
-- 🐍 **Python**: 3.11+
-- 📊 **Coverage**: n/a
-
----
-
 ## Features ✨
 - 🗣️ **Voice and chat**: Uses OpenAI LLM and optional Deepgram/OpenAI TTS for natural interactions.
 - 🖥️ **Screen-aware guidance**: Automatically attaches the latest screen-share frame to user turns for grounded Q&A.
