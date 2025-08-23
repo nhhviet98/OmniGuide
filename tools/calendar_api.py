@@ -56,7 +56,7 @@ class GoogleCalendar(Calendar):
         timezone: str = "Asia/Ho_Chi_Minh",
         calendar_id: str = "primary",
         base_url: str | None = None,
-        event_duration_min: int = 30,
+        event_duration_min: int = 60,
     ) -> None:
         self.tz = ZoneInfo(timezone)
         self._timezone_name = timezone
@@ -88,7 +88,7 @@ class GoogleCalendar(Calendar):
             self._logger.info(f"using google calendar: {cal_summary}")
 
     async def schedule_appointment(
-        self, *, start_time: datetime.datetime, attendee_email: str
+        self, *, start_time: datetime.datetime
     ) -> None:
         # Ensure timezone-aware UTC for checks and ISO payloads
         start_utc = start_time.astimezone(datetime.timezone.utc)
@@ -107,10 +107,9 @@ class GoogleCalendar(Calendar):
         end_local = end_utc.astimezone(self.tz)
 
         body = {
-            "summary": "LiveKit Appointment",
+            "summary": "AI Feature Exploration Meeting",
             "start": {"dateTime": start_local.isoformat(), "timeZone": self._timezone_name},
             "end": {"dateTime": end_local.isoformat(), "timeZone": self._timezone_name},
-            "attendees": [{"email": attendee_email}],
         }
 
         async with self._http_session.post(
