@@ -53,9 +53,10 @@ class GoogleCalendar(Calendar):
         self,
         *,
         access_token: str | None = None,
-        timezone: str,
+        timezone: str = "Asia/Ho_Chi_Minh",
         calendar_id: str = "primary",
         base_url: str | None = None,
+        event_duration_min: int = 30,
     ) -> None:
         self.tz = ZoneInfo(timezone)
         self._timezone_name = timezone
@@ -68,6 +69,7 @@ class GoogleCalendar(Calendar):
         self._base_url = base_url or os.environ.get(
             "GOOGLE_CAL_BASE_URL", "https://www.googleapis.com/calendar/v3/"
         )
+        self._event_duration_min = int(event_duration_min)
 
         try:
             self._http_session = http_context.http_session()
@@ -90,7 +92,7 @@ class GoogleCalendar(Calendar):
     ) -> None:
         # Ensure timezone-aware UTC for checks and ISO payloads
         start_utc = start_time.astimezone(datetime.timezone.utc)
-        end_utc = start_utc + datetime.timedelta(minutes=EVENT_DURATION_MIN)
+        end_utc = start_utc + datetime.timedelta(minutes=self._event_duration_min)
 
         # Double-check availability to avoid overlapping bookings
         busy_blocks = await self._freebusy(start_utc=start_utc, end_utc=end_utc)
@@ -136,14 +138,14 @@ class GoogleCalendar(Calendar):
 
         # Generate 30-min candidate starts from start_utc up to end_utc - duration
         slots: list[AvailableSlot] = []
-        duration = datetime.timedelta(minutes=EVENT_DURATION_MIN)
+        duration = datetime.timedelta(minutes=self._event_duration_min)
 
         # Align start to the next 30-min boundary
-        aligned_start = self._align_to_interval(start_utc, minutes=EVENT_DURATION_MIN)
+        aligned_start = self._align_to_interval(start_utc, minutes=self._event_duration_min)
         current = aligned_start
         while current + duration <= end_utc:
             if not self._is_range_busy(current, current + duration, busy_blocks):
-                slots.append(AvailableSlot(start_time=current, duration_min=EVENT_DURATION_MIN))
+                slots.append(AvailableSlot(start_time=current, duration_min=self._event_duration_min))
             current += duration
 
         return slots
@@ -192,40 +194,6 @@ class GoogleCalendar(Calendar):
             "Content-Type": "application/json",
         }
 
-
-async def _test_google_calendar() -> None:
-    tz_name = os.environ.get("TEST_TZ", "UTC")
-    access_token = os.environ.get("GOOGLE_CAL_ACCESS_TOKEN")
-    calendar_id = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
-    base_url = os.environ.get("GOOGLE_CAL_BASE_URL")
-
-    if not access_token:
-        print("GOOGLE_CAL_ACCESS_TOKEN is not set; cannot run test.")
-        return
-
-    cal = GoogleCalendar(
-        access_token=access_token,
-        timezone=tz_name,
-        calendar_id=calendar_id,
-        base_url=base_url,
-    )
-    await cal.initialize()
-
-    now_local = datetime.datetime.now(ZoneInfo(tz_name))
-    start = now_local
-    end = start + datetime.timedelta(days=7)
-
-    print(f"Listing available {EVENT_DURATION_MIN}-min slots between {start} and {end}...")
-    slots = await cal.list_available_slots(start_time=start, end_time=end)
-    print(f"Found {len(slots)} slots.")
-    for s in slots[:10]:
-        print(f"- {s.start_time.isoformat()} ({s.duration_min}m) id={s.unique_hash}")
-
-    await cal.schedule_appointment(start_time=slots[0].start_time, attendee_email="nguyennbaochau@gmail.com")
-    print("Booking created.")
-
-
-if __name__ == "__main__":
-    from dotenv import load_dotenv
-    load_dotenv()
-    asyncio.run(_test_google_calendar())
+    @property
+    def event_duration_min(self) -> int:
+        return self._event_duration_min
