@@ -71,7 +71,7 @@ async def entrypoint(ctx: JobContext):
     session = AgentSession[Userdata](
         userdata=Userdata(cal=cal),
         stt=deepgram.STT(),
-        llm=openai.LLM(model="gpt-4o", timeout=httpx.Timeout(connect=30.0, read=30.0, write=30.0, pool=30.0)),
+        llm=openai.LLM(model="gpt-4o"),
         tts=openai.TTS(model="gpt-4o-mini-tts"),
         turn_detection=MultilingualModel(),
         vad=silero.VAD.load(),
