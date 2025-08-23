@@ -113,15 +113,31 @@ class ScreenQAAgent(Agent):
         return "\n".join(lines) or "No slots available at the moment."
 
     @function_tool
-    async def schedule_appointment(self, ctx: RunContext, slot_id: str) -> str | None:
+    async def schedule_appointment(self, ctx: RunContext, date_time: str) -> str | None:
         """
-        Schedule an appointment at the given slot.
+        Schedule an appointment at the given date and time.
 
         Args:
-            slot_id: The identifier for the selected time slot (as shown in the list of available slots).
+            date_time: Desired start time as a string. Prefer ISO 8601 like
+                "2025-01-10T14:30" or "2025-01-10 14:30". If no timezone is
+                included, assume the session timezone.
         """
-        if not (slot := self._slots_map.get(slot_id)):
-            raise ToolError(f"error: slot {slot_id} was not found")
+        # Parse the provided datetime string
+        try:
+            raw = date_time.strip()
+            try:
+                dt = datetime.datetime.fromisoformat(raw)
+            except ValueError:
+                # common variant without the "T"
+                dt = datetime.datetime.fromisoformat(raw.replace(" ", "T"))
+
+            # Apply timezone if missing
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=self.tz)
+        except Exception:
+            raise ToolError(
+                "Invalid date-time format. Use e.g. 2025-01-10T14:30 or 2025-01-10 14:30"
+            ) from None
 
         if ctx.speech_handle.interrupted:
             return
@@ -129,12 +145,10 @@ class ScreenQAAgent(Agent):
         ctx.disallow_interruptions()
 
         try:
-            await ctx.userdata.cal.schedule_appointment(
-                start_time=slot.start_time
-            )
+            await ctx.userdata.cal.schedule_appointment(start_time=dt)
         except SlotUnavailableError:
-            raise ToolError("This slot isn't available anymore") from None
+            raise ToolError("This time isn't available anymore") from None
 
-        local = slot.start_time.astimezone(self.tz)
+        local = dt.astimezone(self.tz)
         return f"The appointment was successfully scheduled for {local.strftime('%A, %B %d, %Y at %H:%M %Z')}."
 
