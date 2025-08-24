@@ -75,7 +75,6 @@ async def entrypoint(ctx: JobContext):
         tts=openai.TTS(model="gpt-4o-mini-tts"),
         turn_detection=MultilingualModel(),
         vad=silero.VAD.load(),
-        max_tool_steps=1,
     )
 
     await session.start(
