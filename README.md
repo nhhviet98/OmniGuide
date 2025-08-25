@@ -36,11 +36,10 @@ cp template.env .env  # then edit with your keys
   - `list_available_slots(range)` to list free time
   - `schedule_appointment(date_time)` to book a meeting
 ```bash
-cd examples/omniguide
 python run_app.py
 ```
 
-🎛️ In the LiveKit Playground:
+🎛️ In the LiveKit Playground (`https://agents-playground.livekit.io/`):
 1. Create/join a room and connect the worker.
 2. Enable microphone, chat, and screen share.
 3. Share a calendar window or any UI and ask questions by voice or text.
