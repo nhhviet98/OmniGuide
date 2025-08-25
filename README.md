@@ -22,8 +22,8 @@ A LiveKit-based multimodal agent that understands your shared screen, chats by v
 
 ### Setup 🛠️
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+conda create -n omniguide python=3.11 -y
+conda activate omniguide
 pip install -r requirements.txt
 cp template.env .env  # then edit with your keys
 ```
