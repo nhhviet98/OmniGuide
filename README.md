@@ -22,7 +22,6 @@ A LiveKit-based multimodal agent that understands your shared screen, chats by v
 
 ### Setup 🛠️
 ```bash
-cd examples/omniguide
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
